@@ -164,36 +164,113 @@ end
 BER_8psk_th  = (1/3) * erfc(sqrt(3 * EbN0) * sin(pi/8));
 BER_16qam_th = (3/8) * erfc(sqrt(0.4 * EbN0));
 
-%% ===================== PLOT 3: Integrated Comparison =====================
+%% ===================== PART 6: Coherent BFSK =====================
+% 2D orthogonal signal space:
+%   bit 0 -> s1 = [sqrt(E_bit); 0] along phi_1
+%   bit 1 -> s2 = [0; sqrt(E_bit)] along phi_2
+BER_bfsk  = zeros(size(EbN0_dB));
+bits_bfsk = randi([0 1], 1, N_sym);
+
+for k = 1:length(EbN0_dB)
+    % mapper (projections onto phi_1 and phi_2)
+    s1 = (bits_bfsk == 0) * sqrt(E_bit);
+    s2 = (bits_bfsk == 1) * sqrt(E_bit);
+    
+    % channel (independent AWGN with variance N0/2 per orthogonal dimension)
+    r1 = s1 + sigma(k) * randn(size(s1));
+    r2 = s2 + sigma(k) * randn(size(s2));
+    
+    % demapper (ML decision rule: decide 1 if r2 > r1, else 0)
+    bits_hat = (r2 > r1);
+    
+    % BER calculation
+    BER_bfsk(k) = sum(bits_hat ~= bits_bfsk) / N_sym;
+    if EbN0_dB(k) == 10, tx_bfsk10 = s1 + 1j*s2; rx_bfsk10 = r1 + 1j*r2; end
+end
+
+%% ===================== THEORY (BFSK) =====================
+BER_bfsk_th  = 0.5 * erfc(sqrt(0.5 * EbN0));
+
+%% ===================== PART 7: BFSK Baseband PSD Simulation =====================
+Tb    = 1;                                        % normalized bit duration (s)
+Ns    = 64;                                       % oversampling factor (samples/bit)
+Fs    = Ns / Tb;                                  % sampling frequency (Hz)                                    
+
+% Time vector for one bit interval [0, Tb)
+t_bit = (0:Ns-1) / Fs;
+
+% Baseband equivalent signals (Lecture convention: fc = f1, Delta_f = 1/Tb)
+s1_bb = sqrt(2*E_bit/Tb) * ones(1, Ns);
+s2_bb = sqrt(2*E_bit/Tb) * exp(1j * 2 * pi * (1/Tb) * t_bit);
+
+% Generate random bits and synthesize continuous-time baseband stream
+bits_psd = randi([0 1], N_sym, 1);
+tx_mat   = (bits_psd == 0) * s1_bb + (bits_psd == 1) * s2_bb;
+x_bb     = reshape(tx_mat.', 1, []);
+
+% Estimate centered two-sided PSD via Welch's method
+win_len = 4096;
+overlap = win_len / 2;
+nfft    = 8192;
+[S_B, f] = pwelch(x_bb, hamming(win_len), overlap, nfft, Fs, 'centered');
+
+%% ===================== PLOT 4: Baseband PSD =====================
+
+% Linear Normalized Baseband PSD
+figure;
+plot(f * Tb, S_B / E_bit, 'b-', 'LineWidth', 1.4);
+grid on;
+xlabel('Normalized Frequency (f \cdot T_b)');
+ylabel('Normalized PSD, S_B(f) / E_b');
+title('Simulated Baseband Power Spectral Density of Coherent BFSK');
+xlim([-3 4]);
+
+% dB Normalized Baseband PSD
+figure;
+plot(f * Tb, 10*log10(S_B / E_bit), 'b-', 'LineWidth', 1.2);
+grid on;
+xlabel('Normalized Frequency (f \cdot T_b)');
+ylabel('Normalized PSD, 10 log_{10}(S_B(f) / E_b) (dB)');
+title('Simulated Baseband PSD of Coherent BFSK (dB Scale)');
+xlim([-3 4]); ylim([-50 5]);
+
+%% ===================== PLOT 5: Integrated Comparison =====================
 figure;
 % Simulation curves
-semilogy(EbN0_dB, BER_bpsk, 'bo-', 'LineWidth', 1.2, 'MarkerSize', 6); hold on;
-semilogy(EbN0_dB, BER_qpsk, 'rs-', 'LineWidth', 1.2, 'MarkerSize', 6);
-semilogy(EbN0_dB, BER_8psk, 'g^-', 'LineWidth', 1.2, 'MarkerSize', 6);
+semilogy(EbN0_dB, BER_bpsk,  'bo-', 'LineWidth', 1.2, 'MarkerSize', 6); hold on;
+semilogy(EbN0_dB, BER_qpsk,  'rs-', 'LineWidth', 1.2, 'MarkerSize', 6);
+semilogy(EbN0_dB, BER_8psk,  'g^-', 'LineWidth', 1.2, 'MarkerSize', 6);
 semilogy(EbN0_dB, BER_16qam, 'md-', 'LineWidth', 1.2, 'MarkerSize', 6);
+semilogy(EbN0_dB, BER_bfsk,  'kv-', 'LineWidth', 1.2, 'MarkerSize', 6);
 
 % Theoretical curves
-semilogy(EbN0_dB, BER_bpsk_th, 'b--', 'LineWidth', 1.2);
-semilogy(EbN0_dB, BER_qpsk_th, 'r--', 'LineWidth', 1.2);
-semilogy(EbN0_dB, BER_8psk_th, 'g--', 'LineWidth', 1.2);
+semilogy(EbN0_dB, BER_bpsk_th,  'b--', 'LineWidth', 1.2);
+semilogy(EbN0_dB, BER_qpsk_th,  'r--', 'LineWidth', 1.2);
+semilogy(EbN0_dB, BER_8psk_th,  'g--', 'LineWidth', 1.2);
 semilogy(EbN0_dB, BER_16qam_th, 'm--', 'LineWidth', 1.2);
+semilogy(EbN0_dB, BER_bfsk_th,  'k--', 'LineWidth', 1.2);
 
 grid on; xlabel('E_b/N_0 (dB)'); ylabel('BER');
-title('Integrated BER vs E_b/N_0 for BPSK, QPSK, 8PSK, and 16QAM');
-legend('BPSK (sim)', 'QPSK (sim)', '8PSK (sim)', '16QAM (sim)', ...
-       'BPSK (th)', 'QPSK (th)', '8PSK (th)', '16QAM (th)', 'Location', 'southwest');
+title('Integrated BER vs E_b/N_0 for BPSK, QPSK, 8PSK, 16QAM, and BFSK');
+legend('BPSK (sim)', 'QPSK (sim)', '8PSK (sim)', '16QAM (sim)', 'BFSK (sim)', ...
+       'BPSK (th)', 'QPSK (th)', '8PSK (th)', '16QAM (th)', 'BFSK (th)', ...
+       'Location', 'southwest');
 ylim([1e-6 1]);
 
 %% ===================== EXTRA: Constellations @ 10 dB =====================
-n   = 1:5000;                                      % Extract first 5000 symbols at 10 dB
-TX = {s, tx_qpsk10, tx_8psk10, tx_16qam10};        % Transmitted symbols array
-RX = {r_bpsk10, r_qpsk10, rx_8psk10, rx_16qam10};  % Received symbols array
-ttl = {'BPSK', 'QPSK', '8PSK', '16QAM'};
+n   = 1:5000;                                                % Extract first 5000 symbols at 10 dB
+TX  = {s, tx_qpsk10, tx_8psk10, tx_16qam10, tx_bfsk10};      % Transmitted symbols array
+RX  = {r_bpsk10, r_qpsk10, rx_8psk10, rx_16qam10, rx_bfsk10};% Received symbols array
+ttl = {'BPSK', 'QPSK', '8PSK', '16QAM', 'BFSK'};
 figure;
-for m = 1:4
-    subplot(2,2,m);
+for m = 1:5
+    subplot(2,3,m);
     plot(real(RX{m}(n)), imag(RX{m}(n)), '.', 'MarkerSize', 4); hold on;   % Received points
     plot(real(TX{m}(n)), imag(TX{m}(n)), 'r+', 'MarkerSize', 8);           % Ideal targets
     grid on; axis equal; title([ttl{m} ' @ E_b/N_0 = 10 dB']);
-    xlabel('I'); ylabel('Q');
+    if m == 5
+        xlabel('\phi_1'); ylabel('\phi_2');
+    else
+        xlabel('I'); ylabel('Q');
+    end
 end
